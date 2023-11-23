@@ -12,7 +12,6 @@ class TPLinkDeviceMonitor:
         self.token = ""
         self.try_again_timer = -1
         self.device_list = []
-        self.cameras = []
         self.smart_plugs = []
 
     def _get_or_update_token(self):
@@ -33,7 +32,12 @@ class TPLinkDeviceMonitor:
                 }
         }
 
-        resp = requests.post(api_url, json=token_req)
+        try:
+            resp = requests.post(api_url, json=token_req)
+        except Error as e:
+            print("Error sending a request to the API trying to get token. Giving up.")
+            print(e)
+            return False
         if "token" in resp.text:
             self.token = resp.text.split(",")[-1].split(":")[-1][1:-3]
             self.try_again_timer = -1
@@ -42,10 +46,10 @@ class TPLinkDeviceMonitor:
             self.token = ""
             if "rate limit" in resp.text:
                 print("Rate limit exceeded. Too many requests in a short time. Trying again in 5 minutes.")
-                self.try_again_timer = time.time()
-                return False
             else:
                 print("Failed to get token. If you have 2-factor authentication enabled it will always fail.")
+                print("Trying again in 5 minutes.")
+            self.try_again_timer = time.time()
             return False
 
     def _get_or_update_device_list(self):
@@ -57,39 +61,71 @@ class TPLinkDeviceMonitor:
         dev_req_data = {"method": "getDeviceList"}
         dev_req_header = {"Content-Type": "application/json"}
 
-        resp = requests.post(dev_req_url, headers=dev_req_header, json=dev_req_data)
+        try:
+            resp = requests.post(dev_req_url, headers=dev_req_header, json=dev_req_data)
+        except Error as e:
+            print("Error requesting device list. Giving up.")
+            print(e)
+            return
         self.device_list = json.loads(resp.text)["result"]["deviceList"]
 
     def _get_smart_plugs(self):
-        return
+        self._get_or_update_device_list()
+        self.smart_plugs = []
+        if not len(self.device_list):
+            print("Unable to retrieve device list. Check not completed.")
+            return
+        for dev in self.device_list:
+            try:
+                if "HS10" in dev["deviceModel"]:
+                    self.smart_plugs += [KasaPlug(dev)]
+            except ValueError as e:
+                print("Whatever info was obtained from the device list doesn't make sense. Giving up.")
+                print(e)
 
     def turn_on_all_plugs(self):
         self._get_smart_plugs()
+        if not len(self.smart_plugs):
+            print("Plug device list is empty. Unable to adjust plug state.")
+            return
         dev_req_url = "https://wap.tplinkcloud.com?token=" + self.token
         dev_req_header = {"Content-Type": "application/json"}
-        for cam in self.cameras:
+        for plug in self.smart_plugs:
             dev_req_data = {
                 "method": "passthrough",
                 "params": {
-                    "deviceId": cam.device_id,
+                    "deviceId": plug.device_id,
                     "requestData": "{\"system\":{\"set_relay_state\":{\"state\":1}}}"
                 }
             }
-            resp = requests.post(dev_req_url, headers=dev_req_header, json=dev_req_data)
+            try:
+                resp = requests.post(dev_req_url, headers=dev_req_header, json=dev_req_data)
+            except Error as e:
+                print("Error trying to turn plug ", plug.alias, " on. Giving up."
+                                                                " Some plugs may be on while others are off now.")
+                print(e)
 
     def turn_off_all_plugs(self):
         self._get_smart_plugs()
+        if not len(self.smart_plugs):
+            print("Plug device list is empty. Unable to adjust plug state.")
+            return
         dev_req_url = "https://wap.tplinkcloud.com?token=" + self.token
         dev_req_header = {"Content-Type": "application/json"}
-        for cam in self.cameras:
+        for plug in self.smart_plugs:
             dev_req_data = {
                 "method": "passthrough",
                 "params": {
-                    "deviceId": cam.device_id,
+                    "deviceId": plug.device_id,
                     "requestData": "{\"system\":{\"set_relay_state\":{\"state\":0}}}"
                 }
             }
-            resp = requests.post(dev_req_url, headers=dev_req_header, json=dev_req_data)
+            try:
+                resp = requests.post(dev_req_url, headers=dev_req_header, json=dev_req_data)
+            except Error as e:
+                print("Error trying to turn plug ", plug.alias, " off. Giving up."
+                                                                " Some plugs may be on while others are off now.")
+                print(e)
 
 
 class KasaPlug:
