@@ -48,17 +48,22 @@ tp = TPLinkDeviceMonitor(sys.argv[1], sys.argv[2], "6883cc6c-e12a-4d45-81b1-8662
 print("Beginning monitoring...")
 start = time.time()
 refresh_time = 5
+last_action = None
 while True:
     if (time.time() - start) >= refresh_time:
         print("Checking device status...")
         try:
             if (not ping("192.168.68.62")) and (not ping("192.168.68.66")):
                 print("Detected both devices gone. Activating all plugs/cameras. Checking again in 10 minutes")
-                tp.turn_on_all_plugs()
+                if last_action != "on":
+                    tp.turn_on_all_plugs()
+                    last_action = "on"
                 refresh_time = 600
             else:
                 print("Device present. Cameras off. Checking again in 2.5 minutes.")
-                tp.turn_off_all_plugs()
+                if last_action != "off":
+                    tp.turn_off_all_plugs()
+                    last_action = "off"
                 refresh_time = 180
         except Error as e:
             print("Something went wrong. See error below. Trying again in ", str(refresh_time), " seconds.")
