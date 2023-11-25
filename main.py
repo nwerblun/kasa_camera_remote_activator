@@ -53,10 +53,13 @@ successful_pings = False
 while True:
     if (time.time() - start) >= refresh_time:
         print("Checking device status...")
+        successful_pings = False
         try:
-            # Try 5 times to avoid random failures
-            for i in range(5):
-                successful_pings = successful_pings or (ping("192.168.68.62") or ping("192.168.68.66"))
+            # Try 3 times to avoid random errors
+            for i in range(3):
+                if successful_pings:
+                    break
+                successful_pings = (ping("192.168.68.62") or ping("192.168.68.66"))
             if not successful_pings:
                 print("Detected both devices gone. Activating all plugs/cameras. Checking again in 10 minutes")
                 if last_action != "on":
